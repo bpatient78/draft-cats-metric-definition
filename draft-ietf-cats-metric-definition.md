@@ -205,59 +205,25 @@ Figure 1 provides a summary of the logical relationships between metrics across 
 
 # CATS Metrics Framework and Specification
 
-The CATS metrics framework is a key component of the CATS architecture. It defines how metrics are encoded and transmitted over the network. The representation should be flexible enough to accommodate various types of metrics along with their respective units and precision levels, yet simple enough to enable easy implementation and deployment across heterogeneous edge environments.
+The CATS metrics framework defines how metrics are encoded and transmitted over the network. The representation should be flexible enough to accommodate various types of metrics along with their respective units and precision levels, yet simple enough to enable easy implementation and deployment across heterogeneous edge environments. 
 
 ## CATS Metric Fields
 
-This section defines the detailed structure used to represent CATS metrics. The design follows principles established in related IETF specifications, such as the network performance metrics outlined in {{RFC9439}}.
+This section defines the detailed structure used to represent CATS metrics. The design inherits principles outlined in {{RFC9439}}.
+
+* Semantic granularity and extensibility: It adopts the layered metric abstraction inspired by {{RFC9439}}'s link to end-to-end aggregation.
+
+* Metric source: It follows {{RFC9439}} by introducing a 'Source' field to distinguish metric context. 
+
+* Interoperability flexibility: It allows implementation-specific aggregation and normalization functions, and adds default policies to ensure consistent cross-vendor interpretation.
 
 Each CATS metric is expressed as a structured set of fields, with each field describing a specific property of the metric. The following definition introduces the fields used in the CATS metric representations.
 
-<!-- JRG Note and TODO: Define each of the types, formats, etc.. Do we need to standardize them? -->
-~~~
-- Cats_metric:
-      - Metric_type:
-            The type of the CATS metric.
-            Examples: compute_cpu, storage_disk_size, network_bw,
-            compute_delay, network_delay, compute_norm,
-            storage_norm, network_norm, delay_norm.
-      - Format:
-            The encoding format of the metric.
-            Examples: int, float.
-      - Format_std (optional):
-            The standard used to encode and decode the value
-            field according to the format field.
-            Example: ieee_754, ascii.
-      - Length:
-            The size of the value field measured in octets.
-            Examples: 2, 4, 8, 16, 32, 64.
-      - Unit:
-            The unit of this metric.
-            Examples: mhz, ghz, byte, kbyte, mbyte,
-            gbyte, bps, kbps, mbps, gbps, tbps, tflops, none.
-      - Source (optional):
-            The source of information used to obtain the value field.
-            Examples: nominal, estimation, normalization,
-            aggregation.
-      - Statistics(optional):
-            The statistical function used to obtain the value field.
-            Examples: max, min, mean, cur.
-      - Level:
-            The level this metric belongs to.
-            Examples: L0, L1, L2.
-      - Value:
-            The value of this metric.
-            Examples: 12, 3.2.
-~~~
-{: #fig-metric-def title="CATS Metric Fields"}
-
-Next, we describe each field in more detail:
-
 - **Metric_Type (type)**: This field specifies the category or kind of CATS metric being measured, such as computational resources, storage capacity, or network bandwidth. It acts as a label that enables network devices to identify the purpose of the metric.
 
-- **Format (format)**: This field indicates the data encoding format of the metric, such as whether the value is represented as an integer, a floating-point number, or has no specific format.
+- **Level (level)**: This field specifies the level at which the metric is measured. It is used to categorize the metric based on its granularity and scope. Examples include Level 0, Level 1, and Level 2. The level field helps in understanding the level of detail and specificity of the metric being measured.
 
-- **Format standard (format_std, optional)**: This optional field indicates the standard used to encode and decode the value field according to the format field. It is only required if the value field is encoded using a specific standard, and knowing this standard is necessary to decode the value field. Examples of format standards include ieee_754 and ascii. This field ensures that the value can be accurately interpreted by specifying the encoding method used.
+- **Format (format)**: This field indicates the data encoding format of the metric, such as uint, ieee_754_float, ascii_string.
 
 - **Length (length)**: This field indicates the size of the value field measured in octets (bytes). It specifies how many bytes are used to store the value of the metric. Examples include 4, 8, 16, 32, and 64. The length field is important for memory allocation and data handling, ensuring that the value is stored and retrieved correctly.
 
@@ -271,23 +237,22 @@ Next, we describe each field in more detail:
 
     - 'directly measured'. This source indicates that the metric can be obtained directly from the underlying device and it does not need to be estimated.
 
-    - 'normalization'. The 'normalization' source indicates that the metric value was normalized. For instance, a metric could be normalized to take a value from 0 to 1, from 0 to 10, or to take a percentage value. This type of metrics do not have units.
+    - 'normalization'. The 'normalization' source indicates that the metric value is normalized. This type of metrics does not have units. This document specifies that the normalized value range for each metric is 0 to 10, where 0 indicates the poorest compute/composed capability, and 10 indicates the optimal compute/composed capability.
 
     - 'aggregation'. This source indicates that the metric value was obtained by using an aggregation function.
-<!-- JRG: Define aggregation and normalization functions -->
 
     Nominal metrics have inherent physical meanings and specific units without any additional processing. Aggregated metrics may or may not have physical meanings, but they retain their significance relative to the directly measured metrics. Normalized metrics, on the other hand, might have physical meanings but lack units.
 
-- **Statistics (statistics, optional)**: This field provides additional details about the metrics, particularly if there is any pre-computation performed on the metrics before they are collected. It is useful for services that require specific statistics for service instance selection.
+- **Statistics (statistics, optional)**: This field provides additional details about the metrics, particularly if there is any pre-computation performed on the metrics before they are collected. It is useful for services that require specific statistics for service instance selection. The 'Statistics' field must be used together with the 'Measurement_Window' parameter to indicate the sampling time interval. There are four kinds of statistics:
 
     - 'max'. The maximum value of the data collected over intervals.
     - 'min'. The minimum value of the data collected over intervals.
     - 'mean'. The average value of the data collected over intervals.
     - 'cur'. The current value of the data collected.
 
-- **Level (level)**: This field specifies the level at which the metric is measured. It is used to categorize the metric based on its granularity and scope. Examples include L0, L1, and L2. The level field helps in understanding the level of detail and specificity of the metric being measured.
-
 - **Value (value)**: This field represents the actual numerical value of the metric being measured. It provides the specific data point for the metric in question.
+
+The value assignment and encoding rules for these fields are specified in Section {{Level Metric Representations}}.
 
 ## Aggregation and Normalization Functions
 
@@ -295,32 +260,40 @@ In the context of CATS metric processing, aggregation and normalization are two 
 
 ### Aggregation
 
-Aggregation functions combine multiple metric values into a single representative value. This is particularly useful when metrics are collected from multiple sources or over time intervals. For example, CPU usage metrics from multiple service instances may be aggregated to produce a single load indicator for a service. Common aggregation functions include:
+Aggregation functions combine multiple values into a single representative value. In CATS, aggregation applies only to multiple metrics of the same category, which may vary in sampling time or source. The aggregation function preserves the unit consistency between input and output: if the inputs have units, the output keeps the same unit; if the inputs are unitless (e.g., Level 1 metrics of a category), the output is also unitless. Aggregation does not apply across different categories of metrics.
 
-- Mean average: Computes the arithmetic average of a set of values.
+For example, CPU usage metrics from multiple service instances may be aggregated to produce a single load indicator for a service. Common aggregation functions include:
+
+- Mean: Computes the arithmetic mean of a set of values.
 - Minimum/maximum: Selects the lowest or highest value from a set.
 - Weighted average: Applies weights to values based on relevance or priority.
 
-The output of an aggregation function is typically a Level 2 metric, derived from multiple Level 0 metrics, or a level 2 metric, derived from multiple Level 0 or 1 metrics.
+Aggregation functions are not standardized in this document. They are implementation-specific and controlled by operator policy.
 
 ~~~
-      +------------+     +-------------------+
-      | Metric 1.1 |---->|                   |
-      +------------+     |    Aggregation    |     +----------+
-           ...           |     Function      |---->| Metric 2 |
-      +------------+     |                   |     +----------+
-      | Metric 1.n |---->|                   |
-      +------------+     +-------------------+
+  +----------------+     +-------------------+
+  | Metric_type a  |---->|                   |
+  | Source 10.0.0.1|     |                   |
+  | at Time t1     |     |                   |
+  +----------------+     |    Aggregation    |     +----------+
+           ...           |     Function      |---->| Metric b |
+  +----------------+     |                   |     +----------+
+  | Metric_type a  |---->|                   |
+  | Source 10.0.0.2|     |                   |
+  | at Time t2     |     |                   |
+  +----------------+     +-------------------+
 
-      Input: Multiple values                   Output: Single value
-
+  Input: Multiple values                   Output: Single value
+  Unit remains the same for multiple inputs and the output
 ~~~
 {: #fig-agg-funct title="Aggregation function"}
 
 
 ### Normalization
 
-Normalization functions convert metric values with or without units into unitless scores, enabling comparison across different types of metrics and systems. This is essential when combining metrics from a heterogeneous set of resources (e.g, latency measured in milliseconds with CPU usage measured in percentage) into a unified decision model.
+Normalization functions convert a metric value (with or without units) into a unitless normalized score. Normalization does not distinguish sampling time or metric source, and only considers the category of the input metrics. In CATS, normalization supports two cases:
+- Normalizing Level 0 metrics (from the same category or different categories) to generate a Level 1 category metric;
+- Normalizing multiple Level 1 and/or Level 0 metrics from different categories to generate a Level 2 metric.
 
 Normalization functions often map values into a bounded range, such as integers fron 0, to 5, or real numbers from 0 to 1, using techniques like:
 
@@ -333,32 +306,54 @@ Normalization functions often map values into a bounded range, such as integers 
 Normalized metrics facilitate composite scoring and ranking, and can be used to produce Level 1 and Level 2 metrics.
 
 ~~~
-      +----------+     +------------------------+     +----------+
-      | Metric 1 |---->| Normalization Function |---->| Metric 2 |
-      +----------+     +------------------------+     +----------+
-
-      Input:  Value with or without units         Output: Unitless value
-
+    +----------+     +---------------+     +----------+
+    | Level 0  |     |               |     |          |
+    | Metric a |---->| Normalization |     | Level 1  |
+    +----------+     |   Function    |---->| Metric c |
+        ...          |               |     |          |
+    (one or more)    |               |     |          |
+    +----------+     |               |     |          |
+    | Level 0  |---->|               |     |          |
+    | Metric b |     +---------------+     +----------+
+    +----------+
+ Input: Level 0 Values with units   Output: Level 1 Unitless value
 ~~~
 {: #fig-norm-funct title="Normalization function"}
 
+~~~
+    +----------+     +---------------+     +----------+
+    | Level 0  |     |               |     |          |
+    | Metric a |---->| Normalization |     | Level 2  |
+    +----------+     |   Function    |---->| Metric c |
+        ...          |               |     |          |
+    +----------+     |               |     |          |
+    | Level 1  |---->|               |     |          |
+    | Metric b |     +---------------+     +----------+
+    +----------+
+ Input: Level 0 Values with units and Level 1 Unitless value   
+ Output: Level 2 Unitless value
+~~~
+{: #fig-norm-funct title="Normalization function"}
+
+
 ## On the Meaning of Scores in Heterogeneous Metrics Systems
 
-In a system like CATS, where metrics originate from heterogeneous resources---such as compute, communication, and storage---the interpretation of scores requires careful consideration. While normalization functions can convert raw metrics into unitless scores to enable comparison, these scores may not be directly comparable across different implementations. For example, a score of 4 on a scale from 1 to 5 may represent a high-quality resource in one implementation, but only an average one in another.
+In a system like CATS, where metrics originate from heterogeneous resources---such as compute, communication, and storage---the interpretation of scores requires careful consideration. While normalization functions can convert raw metrics into unitless scores to enable comparison, these scores may not be directly comparable across different implementations. For example, a score of 4 on a scale from 1 to 10 may represent a high-quality resource in one implementation, but only an average one in another.
 
-This ambiguity arises because different implementations may apply distinct normalization strategies, scaling methods, or semantic interpretations. As a result, relying solely on unitless scores for decision-making can lead to inconsistent or suboptimal outcomes, especially when metrics are aggregated from multiple sources.
-
-To mitigate this, implementors of CATS metrics SHOULD provide clear and precise definitions of their metrics---particularly for unitless scores---and explain how these scores should be interpreted. This documentation should be designed to support operators in making informed decisions, even when comparing metrics from different implementations.
-
-Similarly, operators SHOULD exercise caution when making potentially impactful decisions based on unitless metrics whose definitions are unclear or underspecified. In such cases, especially when decisions are critical or sensitive, operators MAY choose to rely on Level 0 (L0) metrics with units, which typically offer a more direct and unambiguous understanding of resource conditions.
+To achieve consistent cross-vendor behavior, the default normalization policies defined in this document SHOULD be followed by all implementations:
+* Score directions and semantic mapping: 
+A common 0-10 numeric range MUST be used for all normalized scores. Unless otherwise specified by the implementation in accompanying documentation, scores in the range 0-3 indicate low capability (not recommended for steering), 4-7 indicate medium capability (steering optional), and 8-10 indicate high capability (priority for steering). This mapping is normative for all CATS L1 and L2 metrics defined in this document.
+* Normalization function baseline: 
+Unless documented otherwise, implementations SHOULD use min-max scaling to map the aggregated raw value into the 0-10 range, based on implementation-specific minimum and maximum expected values. Other functions (e.g., sigmoid) are permitted but their parameters MUST be documented.
+* Measurement window: The default measurement window for all scores is 10 seconds. Implementations MAY use a different window, but they MUST indicate the window length as a parameter (e.g., via the Measurement_Window field defined in the registry entries).
 
 ## Level Metric Representations
 
+This section defines the representation format and constraints for  Level 1 and Level 2 metrics respectively, to ensure consistent encoding and interoperability across implementations.
+
 ### Level 0 Metrics
 
-Several definitions have been developed within the compute and communication industries, as well as through various standardization efforts---such as those by the {{DMTF}}---that can serve as L0 metrics. L0 metrics contain all raw metrics which are not considered to be standardized in this document, considering about their diversity and many other existing work.
-
-See Appendix A for examples of L0 metrics.
+L0 metrics are raw metrics that are not standardized in this document. See Appendix A for examples of L0 metrics developed in the compute and communication industries and other standardization organizations such as the {{DMTF}}.
 
 ### Level 1 Metrics
 
@@ -371,18 +366,13 @@ The sources of L1 metrics is normalization. Based on L0 metrics, service provide
 The metric type of normalized compute metrics is "compute_norm", and its format is unsigned integer. It has no unit. It will occupy an octet. Example:
 
 ~~~
-Basic fields:
+Fields:
       Metric type: compute_norm
       Level: L1
       Format: unsigned integer
       Length: one octet
+      Source: normalization
       Value: 5
-Source:
-      normalization
-
-
-|Metric Type|Level|Format|Length|Value|Source|
-    8bits    2bits  1bit   3bits 8bits  3bits
 ~~~
 {: #fig-normalized-compute-metric title="Example of a normalized L1 compute metric"}
 
@@ -392,18 +382,13 @@ Source:
 The metric type of normalized communication metrics is "communication_norm", and its format is unsigned integer. It has no unit. It will occupy an octet. Example:
 
 ~~~
-Basic fields:
+Fields:
       Metric type: communication_norm
       Level: L1
       Format: unsigned integer
       Length: one octet
+      Source: normalization
       Value: 1
-Source:
-      normalization
-
-|Metric Type|Level|Format|Length|Value|Source|
-    8bits    2bits  1bit   3bits 8bits  3bits
-
 ~~~
 {: #fig-normalized-communication-metric title="Example of a normalized L1 communication metric"}
 
@@ -412,17 +397,13 @@ Source:
 The metric type of normalized composed metrics is "delay_norm", and its format is unsigned integer.  It has no unit.  It will occupy an octet. Example:
 
 ~~~
-Basic fields:
+Fields:
       Metric type: composed_norm
-      Level: L1
+      Level: Level 1
       Format: unsigned integer
       Length: an octet
+      Source: normalization
       Value: 8
-Source:
-      normalization
-
-|Metric Type|Level|Format|Length|Value|Source|
-    8bits    2bits  1bit   3bits 8bits  3bits
 ~~~
 {: #fig-normalized-metric title="Example of a normalized L1 composed metric"}
 
@@ -433,17 +414,13 @@ A Level 2 metric is a single-value, normalized metric that does not carry any in
 Metric type is "norm_fi". The format of the value is unsigned integer. It has no unit. It will occupy an octet. Example:
 
 ~~~
-Basic fields:
+Fields:
       Metric type: norm_fi
       Level: L2
       Format: unsigned integer
       Length: an octet
+      Source: normalization
       Value: 1
-Source:
-      normalization
-
-|Metric Type|Level|Format|Length|Value|Source|
-    8bits    2bits  1bit   3bits 8bits  3bits
 ~~~
 {: #fig-level-2-metric title="Example of a normalized L2 metric"}
 
@@ -1216,10 +1193,6 @@ To-be-assigned
 
 None
 
-
-# Implementation Guidance on Using CATS Metrics
-
-<Authors’ Note: This section has been moved to {{I-D.ietf-cats-framework}} at the suggestion of the chairs, since this document focuses primarily on metric definitions rather than implementation details.>
 
 # Security Considerations
 
