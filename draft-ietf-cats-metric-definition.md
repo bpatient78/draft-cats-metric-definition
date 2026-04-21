@@ -260,7 +260,16 @@ In the context of CATS metric processing, aggregation and normalization are two 
 
 ### Aggregation
 
-Aggregation functions combine multiple values into a single representative value. In CATS, aggregation applies only to multiple metrics of the same category, which may vary in sampling time or source. The aggregation function preserves the unit consistency between input and output: if the inputs have units, the output keeps the same unit; if the inputs are unitless (e.g., Level 1 metrics of a category), the output is also unitless. Aggregation does not apply across different categories of metrics.
+Aggregation functions combine multiple values into a single representative value. In CATS, aggregation supports the following cases:
+
+- Aggregating multiple Level 0 metrics to generate a Level 1 metric;
+
+- Aggregating multiple Level 1 metrics to generate an intermediate metric which will be normalized to generate the Level 2 metric afterwards;
+
+- Aggregating multiple Level 0 and Level 1 metrics to generate an intermediate metric which will be normalized to generate the Level 2 metric afterwards.
+
+
+The aggregation function preserves the unit consistency between input and output: if the inputs have units, the output keeps the same unit; if the inputs are unitless (e.g., Level 1 metrics of a category), the output is also unitless.
 
 For example, CPU usage metrics from multiple service instances may be aggregated to produce a single load indicator for a service. Common aggregation functions include:
 
@@ -272,30 +281,33 @@ Aggregation functions are not standardized in this document. They are implementa
 
 ~~~
   +----------------+     +-------------------+
-  | Metric_type a  |---->|                   |
+  | Metric   a     |---->|                   |
   | Source 10.0.0.1|     |                   |
   | at Time t1     |     |                   |
   +----------------+     |    Aggregation    |     +----------+
-           ...           |     Function      |---->| Metric b |
+           ...           |     Function      |---->| Metric c |
   +----------------+     |                   |     +----------+
-  | Metric_type a  |---->|                   |
+  | Metric   b     |---->|                   |
   | Source 10.0.0.2|     |                   |
   | at Time t2     |     |                   |
   +----------------+     +-------------------+
 
   Input: Multiple values                   Output: Single value
-  Unit remains the same for multiple inputs and the output
 ~~~
 {: #fig-agg-funct title="Aggregation function"}
 
 
 ### Normalization
 
-Normalization functions convert a metric value (with or without units) into a unitless normalized score. Normalization does not distinguish sampling time or metric source, and only considers the category of the input metrics. In CATS, normalization supports two cases:
-- Normalizing Level 0 metrics (from the same category or different categories) to generate a Level 1 category metric;
-- Normalizing multiple Level 1 and/or Level 0 metrics from different categories to generate a Level 2 metric.
+Normalization functions convert a metric value (with or without units) into a unitless normalized score. In CATS, normalization supports the following cases:
 
-Normalization functions often map values into a bounded range, such as integers fron 0, to 5, or real numbers from 0 to 1, using techniques like:
+- Normalizing a single Level 0 metric to generate a Level 1 or Level 2 normalized metric;
+
+- Normalizing a single Level 1 metric which is aggregated from multiple Level 0 metrics, to generate a Level 1 normalized metric;
+
+- Normalizing a single intermediate value which is aggregated from multiple Level 1 metrics, to generate a Level 2 normalized metric.
+
+Normalization functions often map values into a bounded range, such as integers from 0 to 10, using techniques like:
 
 - Sigmoid function: Smoothly maps input values to a bounded range.
 
@@ -307,34 +319,14 @@ Normalized metrics facilitate composite scoring and ranking, and can be used to 
 
 ~~~
     +----------+     +---------------+     +----------+
-    | Level 0  |     |               |     |          |
-    | Metric a |---->| Normalization |     | Level 1  |
-    +----------+     |   Function    |---->| Metric c |
-        ...          |               |     |          |
-    (one or more)    |               |     |          |
-    +----------+     |               |     |          |
-    | Level 0  |---->|               |     |          |
-    | Metric b |     +---------------+     +----------+
-    +----------+
- Input: Level 0 Values with units   Output: Level 1 Unitless value
+    | Metric a |---->| Normalization |---->| Metric b |    
+    +----------+     |   Function    |     +----------+
+                     +---------------+
+
+ Input: a single value with or without units   
+ Output: a single unitless value
 ~~~
 {: #fig-norm-funct title="Normalization function"}
-
-~~~
-    +----------+     +---------------+     +----------+
-    | Level 0  |     |               |     |          |
-    | Metric a |---->| Normalization |     | Level 2  |
-    +----------+     |   Function    |---->| Metric c |
-        ...          |               |     |          |
-    +----------+     |               |     |          |
-    | Level 1  |---->|               |     |          |
-    | Metric b |     +---------------+     +----------+
-    +----------+
- Input: Level 0 Values with units and Level 1 Unitless value   
- Output: Level 2 Unitless value
-~~~
-{: #fig-norm-funct title="Normalization function"}
-
 
 ## On the Meaning of Scores in Heterogeneous Metrics Systems
 
