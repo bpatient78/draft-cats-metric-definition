@@ -205,7 +205,7 @@ Figure 1 provides a summary of the logical relationships between metrics across 
 
 # CATS Metrics Framework and Specification
 
-The CATS metrics framework defines how metrics are encoded and transmitted over the network. The representation should be flexible enough to accommodate various types of metrics along with their respective units and precision levels, yet simple enough to enable easy implementation and deployment across heterogeneous edge environments. 
+The CATS metrics framework defines how metrics are encoded and transmitted over the network. The representation should be flexible enough to accommodate various types of metrics along with their respective units and precision levels, yet simple enough to enable easy implementation and deployment across heterogeneous edge environments.
 
 ## CATS Metric Fields
 
@@ -213,7 +213,7 @@ This section defines the detailed structure used to represent CATS metrics. The 
 
 * Semantic granularity and extensibility: It adopts the layered metric abstraction inspired by {{RFC9439}}'s link to end-to-end aggregation.
 
-* Metric source: It follows {{RFC9439}} by introducing a 'Source' field to distinguish metric context. 
+* Metric source: It follows {{RFC9439}} by introducing a 'Source' field to distinguish metric context.
 
 * Interoperability flexibility: It allows implementation-specific aggregation and normalization functions, and adds default policies to ensure consistent cross-vendor interpretation.
 
@@ -252,7 +252,7 @@ Each CATS metric is expressed as a structured set of fields, with each field des
 
 - **Value (value)**: This field represents the actual numerical value of the metric being measured. It provides the specific data point for the metric in question.
 
-The value assignment and encoding rules for these fields are specified in Section {{Level Metric Representations}}.
+The value assignment and encoding rules for these fields are specified in Section {{level-metric-representations}}.
 
 ## Aggregation and Normalization Functions
 
@@ -262,9 +262,11 @@ In the context of CATS metric processing, aggregation and normalization are two 
 
 Aggregation functions combine multiple values into a single representative value. In CATS, aggregation supports the following cases:
 
-- Aggregating multiple Level 0 metrics to generate a Level 1 metric;
+- Aggregating multiple Level 0 metrics of the same type to generate a Level 0 metric;
 
-- Aggregating multiple Level 1 metrics to generate an intermediate metric which will be normalized to generate the Level 2 metric afterwards;
+- Aggregating multiple Level 0 metrics of different types to generate a Level 1 metric;
+
+- Aggregating multiple Level 1 metrics of different types to generate an intermediate metric which will be normalized to generate the Level 2 metric afterwards;
 
 - Aggregating multiple Level 0 and Level 1 metrics to generate an intermediate metric which will be normalized to generate the Level 2 metric afterwards.
 
@@ -319,11 +321,11 @@ Normalized metrics facilitate composite scoring and ranking, and can be used to 
 
 ~~~
     +----------+     +---------------+     +----------+
-    | Metric a |---->| Normalization |---->| Metric b |    
+    | Metric a |---->| Normalization |---->| Metric b |
     +----------+     |   Function    |     +----------+
                      +---------------+
 
- Input: a single value with or without units   
+ Input: a single value with or without units
  Output: a single unitless value
 ~~~
 {: #fig-norm-funct title="Normalization function"}
@@ -333,13 +335,13 @@ Normalized metrics facilitate composite scoring and ranking, and can be used to 
 In a system like CATS, where metrics originate from heterogeneous resources---such as compute, communication, and storage---the interpretation of scores requires careful consideration. While normalization functions can convert raw metrics into unitless scores to enable comparison, these scores may not be directly comparable across different implementations. For example, a score of 4 on a scale from 1 to 10 may represent a high-quality resource in one implementation, but only an average one in another.
 
 To achieve consistent cross-vendor behavior, the default normalization policies defined in this document SHOULD be followed by all implementations:
-* Score directions and semantic mapping: 
+* Score directions and semantic mapping:
 A common 0-10 numeric range MUST be used for all normalized scores. Unless otherwise specified by the implementation in accompanying documentation, scores in the range 0-3 indicate low capability (not recommended for steering), 4-7 indicate medium capability (steering optional), and 8-10 indicate high capability (priority for steering). This mapping is normative for all CATS L1 and L2 metrics defined in this document.
-* Normalization function baseline: 
+* Normalization function baseline:
 Unless documented otherwise, implementations SHOULD use min-max scaling to map the aggregated raw value into the 0-10 range, based on implementation-specific minimum and maximum expected values. Other functions (e.g., sigmoid) are permitted but their parameters MUST be documented.
 * Measurement window: The default measurement window for all scores is 10 seconds. Implementations MAY use a different window, but they MUST indicate the window length as a parameter (e.g., via the Measurement_Window field defined in the registry entries).
 
-## Level Metric Representations
+## Level Metric Representations {#level-metric-representations}
 
 This section defines the representation format and constraints for  Level 1 and Level 2 metrics respectively, to ensure consistent encoding and interoperability across implementations.
 
