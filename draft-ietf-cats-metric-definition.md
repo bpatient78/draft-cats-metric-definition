@@ -60,20 +60,17 @@ informative:
   I-D.rcr-opsawg-operational-compute-metrics:
   performance-metrics:
     title: performance-metrics
-    author: IANA
-    org: IANA
+    org: Internet Assigned Numbers Authority
     date: 2020-03-19
     target: https://www.iana.org/assignments/performance-metrics/performance-metrics.xhtml
   DMTF:
     title: DMTF
-    author: Distributed Management Task Force (DMTF)
-    org: Distributed Management Task Force (DMTF)
+    org: Distributed Management Task Force
     date: 1998
     target: https://www.dmtf.org/
   Prometheus:
     title: Prometheus
-    author: Cloud Native Computing Foundation (CNCF)
-    org: Cloud Native Computing Foundation (CNCF)
+    org: Cloud Native Computing Foundation
     date: 2012
     target: https://prometheus.io/
 
