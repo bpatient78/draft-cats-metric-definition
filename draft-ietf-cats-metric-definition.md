@@ -60,17 +60,17 @@ informative:
   I-D.rcr-opsawg-operational-compute-metrics:
   performance-metrics:
     title: performance-metrics
-    org: Internet Assigned Numbers Authority
+    organization: Internet Assigned Numbers Authority
     date: 2020-03-19
     target: https://www.iana.org/assignments/performance-metrics/performance-metrics.xhtml
   DMTF:
     title: DMTF
-    org: Distributed Management Task Force
+    organization: Distributed Management Task Force
     date: 1998
     target: https://www.dmtf.org/
   Prometheus:
     title: Prometheus
-    org: Cloud Native Computing Foundation
+    organization: Cloud Native Computing Foundation
     date: 2012
     target: https://prometheus.io/
 
@@ -1206,7 +1206,7 @@ The initial entries for this registry are defined in {{cats-metrics-registry}} a
 
 {{cats-level-1-composed-metric}}: CATS L1 Metric Registry Entry: Composed
 
-For each entry, IANA is requested to assign a unique Identifier (defined in each subsection) from the registry's assignment pool. 
+For each entry, IANA is requested to assign a unique Identifier (defined in each subsection) from the registry's assignment pool.
 
 All metric entries have the following common attributes: Name, URI, Description, Change Controller (IETF), and Version. The naming convention and structure follow the definitions in each respective subsection of {{cats-metrics-registry}}.
 
@@ -1257,7 +1257,7 @@ Fields:
 Delay is a kind of synthesized metric which is influenced by computing, storage access, and network transmission. Usually delay refers to the overal processing duration between the arrival time of a specific service request and the departure time of the corresponding service response. It is named as "delay_raw". The format supports floating point. Its unit is microseconds, and it occupies 4 octets. For example:
 
 ~~~
-Basic fields:
+Fields:
       Metric_Type: "delay_raw"
       Level: Level 0
       Format: floating point
