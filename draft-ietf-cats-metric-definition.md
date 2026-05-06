@@ -72,12 +72,22 @@ informative:
     organization: Cloud Native Computing Foundation
     date: 2012
     target: https://prometheus.io/
+  Min-max-sigmoid:
+    title: "Data Mining: Concepts and Techniques (Fourth Edition)"
+    authors:
+      - "Jiawei Han"
+      - "Jian Pei"
+      - "Hanghang Tong"
+    organization: "Morgan Kaufmann Publishers, an imprint of Elsevier"
+    date: 2023
+    target: "https://doi.org/10.1016/C2013-0-18660-6"
 
 normative:
   RFC2119:
   RFC5835:
   RFC6241:
   RFC7011:
+  RFC7471:
   RFC8174:
   RFC8911:
   RFC8912:
@@ -88,7 +98,9 @@ normative:
 
 --- abstract
 
-Computing-Aware Traffic Steering (CATS) is a traffic engineering (TE) approach that optimizes the steering of traffic to a given service instance by considering the dynamic nature of computing and network resources. In order to consider the computing and network resources, a system needs to share information (metrics) that describes the state of the resources. TE metrics have been in use in network systems for a long time. This document does not define fine-grained computing metrics from scratch. Instead, it defines a set of computing metrics for CATS by classifying both network and computing metrics into three levels and introducing aggregation and normalization functions, focusing on four categories of Level 1 metrics and normalized Level 2 metrics.
+Computing-Aware Traffic Steering (CATS) is a traffic engineering approach that optimizes the steering of traffic to a service instance by considering the dynamic state of computing and network resources. To
+enable such decisions, CATS components exchange metrics that describe resource conditions affecting service instance selection. This document focuses on compute and communication metrics for CATS and defines a
+hierarchical abstraction of these metrics to improve interoperability, scalability, and operational simplicity. It does not aim to standardize raw infrastructure (Level 0) metrics; instead, it specifies higher-level representations that can be derived from raw measurements using aggregation and normalization functions.
 
 --- middle
 
@@ -98,9 +110,9 @@ Service providers are deploying computing capabilities across the network for ho
 
 CATS is a traffic engineering approach that optimizes the steering of traffic to a given service instance by considering the dynamic nature of computing and network resources. To achieve this, CATS components require performance metrics for both communication and compute resources. Since these resources are deployed by multiple providers, standardized metrics are essential to ensure interoperability and enable precise traffic steering decisions, thereby optimizing resource utilization and enhancing overall system performance.
 
-There are already well-defined network metrics for traffic steering, such as Traffic Engineering (TE) metrics and IGP metrics (e.g., link delay, link delay variation), which have been in use in network systems for a long time. In the context of CATS, computing metrics need to be introduced to enable joint TE decisions. {{DMTF}} defines some fine-grained computing metrics, such as CPU utilization, but these cannot be used directly for CATS.
+There are already well-defined network metrics for traffic steering, such as Traffic Engineering (TE) metrics and IGP metrics (e.g., link delay, link delay variation){{RFC7471}}, which have been in use in network systems for a long time. In the context of CATS, computing metrics need to be introduced to enable joint TE decisions. {{DMTF}} defines some fine-grained computing metrics, such as CPU utilization, but directly using these fine-grained computing metrics lacks scalability.
 
-This document does not additionally define such fine-grained performance metrics. Instead, it classifies computing and network metrics into three levels and, by introducing aggregation functions and normalization functions, focuses on defining four categories of Level 1 metrics and normalized Level 2 metrics, considering their complexity and granularity.
+This document does not attempt to standardize low-level fine-grained performance metrics. Instead, it organizes computing and communication metrics into three abstraction levels and defines a metric framework based on aggregation and normalization functions. The framework specifies four categories of Level 1 metrics and a normalized Level 2 metric, balancing metric expressiveness with scalability and ease of use.
 
 # Conventions and Definitions
 
@@ -130,19 +142,22 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 As outlined in {{I-D.ietf-cats-usecases-requirements}}, the resource model that defines CATS metrics MUST be scalable, ensuring that its implementation remains within a reasonable and sustainable cost. To that end, a CATS system should select the most appropriate metrics for instance selection, recognizing that different metrics may influence outcomes in distinct ways depending on the specific use case.
 
-Introducing a definition of metrics requires balancing multiple factors: the types of metrics, their granularity, and their rate of change (e.g., update frequency or churn in advertisement). If there are too many metrics, if each metric is too fine-grained and changes too frequently, the amount of data that must be communicated through the metric distribution protocol becomes excessive, hurting scalability. Conversely, if there are too few metrics, if they are too coarse-grained and change too infrequently, the available information may be insufficient to support sound operational decisions.
+Defining metrics requires carefully balancing multiple considerations, including metric diversity, granularity, and rate of change (e.g., update frequency or advertisement churn). An excessive number of
+metrics, overly fine granularity, or high update frequency can lead to significant signaling overhead, reducing scalability of the metric distribution protocol. In contrast, metrics that are too few, too
+coarse-grained, or updated too infrequently may fail to provide sufficient information to support effective operational decisions.
 
 Conceptually, it is necessary to define at least two fundamental levels of metrics: one comprising all raw metrics, and the other representing a simplified form---consisting of a single value that encapsulates the overall capability of a service instance.
 
-However, such a definition may, to some extent, constrain implementation flexibility across diverse CATS use cases. Implementers often seek balanced approaches that consider trade-offs among encoding complexity, accuracy, scalability, and extensibility.
+However, such a definition may reduce implementation flexibility across diverse CATS use cases. Implementers typically seek balanced approaches that carefully manage trade-offs among encoding complexity, accuracy, scalability, and extensibility.
 
 To ensure scalability while providing sufficient detail for effective decision-making, this document provides a definition of metrics that incorporates three levels of abstraction:
 
 - **Level 0: Raw metrics.** These metrics are presented without abstraction, with each metric using its own unit and format as defined by the underlying resource.
 
-- **Level 1: Metrics normalized within categories.** These metrics are derived by aggregating Level 0 metrics into multiple categories, such as network and computing. Each category is summarized with a single Level 1 metric by normalizing it into a value within a defined range of scores.
+- **Level 1: Metrics combined into categories.** These metrics are derived from Level 0 metrics by applying aggregation functions and, optionally, normalization functions to form category-specific metrics, such as computing and communication.
 
-- **Level 2: Single normalized metric.** These metrics are derived by aggregating lower level metrics (Level 0 or Level 1) into a single Level 2 metric, which is then normalized into a value within a defined range of scores.
+- **Level 2: A single normalized metric.** This metric is computed by aggregating lower-level metrics (Level 0
+or Level 1) and applying normalization to produce a single, unitless Level 2 score within a defined range.
 
 ## Level 0: Raw Metrics
 
@@ -153,17 +168,18 @@ Level 0 metrics encompass detailed, raw metrics, including but not limited to:
 - NPU: Computing power, utilization, power consumption.
 - Communication: Throughput, bandwidth, link utilization, loss, delay, jitter, bytes/packets counters, and other network performance indicators.
 - Storage: Available space, read speed, write speed.
-- Service-specific metrics: Requests per second, output tokens per second, etc.
+- Service-specific metrics: Requests per second, output tokens per second.
 
-Level 0 metrics serve as foundational data. Some of the L0 metrics depend on performance monitoring, some depend on active state, and some are static. They provide basic information to support higher-level metrics, as detailed in the following sections.
+Level 0 metrics serve as foundational data. Some of the Level 0 metrics may depend on performance monitoring, some may depend on active state, and some may be static. They provide basic information to support higher-level metrics, as detailed in the following sections.
 
 Level 0 metrics can be encoded and exposed using an Application Programming Interface (API), such as a RESTful API, and can be technology- and implementation-specific. Different resources can have their own metrics, each conveying unique information about their status. These metrics can generally have units, such as bits per second (bps) or floating point instructions per second (flops).
 
-{{RFC8911}} and {{RFC8912}} haved defined various network performance metrics and their registries. {{DMTF}} standardizes a set of computing metrics. These Level 0 raw metrics will not be standardized in this document, but only serve as foundational data to derive higher level metrics.
+{{RFC8911}} and {{RFC8912}} haved defined various network performance metrics and their registries. {{DMTF}} standardizes a set of computing metrics. These Level 0 raw metrics are not standardized in this document, but can be used as foundational data in CATS to derive higher level metrics.
 
-## Level 1: Aggregated Metrics in Categories
+## Level 1: Metrics Combined in Categories
 
-Level 1 metrics are organized into four distinct categories, computing, communication, service, and composed metrics. further categories may be defined in future specifications. Within each category, a single Level 1 metric is computed through an *aggregation function* and can be further normalized to a unitless score that represents the performance of the underlying resources according to that category.
+Level 1 metrics are grouped into four categories: computing, communication, service, and composed, with the possibility of additional categories being defined in future specifications. For each category, a single Level 1 metric is derived through an aggregation function and, when appropriate, further normalized to
+yield a unitless score reflecting the performance of the underlying resources. The Level 1 categories are described as follows:
 
 - **Computing:** A value derived from aggregating one or more computing-related Level 0 metrics, such as CPU, GPU, and NPU utilization.
 
@@ -173,13 +189,14 @@ Level 1 metrics are organized into four distinct categories, computing, communic
 
 - **Composed:** A value derived from aggregating a combination of computing, communication, and service metrics.
 
-Refer to {{aggregation-function}} and {{normalization-function}} on the definition and examples of **aggregation function** and **normalization function**. Refer to {{score-meaning}} on the default policies for implementions.
+Refer to {{aggregation-function}} and {{normalization-function}} for the definitions and examples of aggregation functions and normalization functions, respectively. Refer to {{score-meaning}} for the default policies and guidance provided to implementations.
 
-This approach allows the metric distribution protocol to focus solely on the metric categories and their simple values, thereby avoiding the need to process solution-specific detailed metrics.
+Level 1 metrics allow to focus solely on the metric categories and their simple values, thereby avoiding the need to process solution-specific Level 0 metrics.
 
 ## Level 2: A Single Normalized Metric
 
-The Level 2 metric is a single normalized score derived from the lower level metrics (Level 0 or Level 1) using an aggregation function followed by normalization. Different implementations may employ different aggregation functions and normalization functions to characterize the overall performance of the underlying compute and communication resources. {{score-meaning}} further introduces some default policies for implementation. The definition of the Level 2 metric simplifies the complexity of collecting and distributing numerous lower-level metrics by consolidating them into a single, unified score.
+The Level 2 metric is a single, normalized score derived from lower-level metrics (Level 0 and/or Level 1) through the application of aggregation and normalization functions. Different implementations
+may apply different functions to characterize the overall performance of the underlying computing and communication resources. By consolidating multiple lower-level metrics into a single score, the Level 2 metric significantly reduces the complexity associated with metric collection and distribution. {{score-meaning}} further describes default policies for implementations.
 
 Figure 1 provides a summary of the logical relationships between metrics across the three levels of abstraction.
 
@@ -208,9 +225,7 @@ Figure 1 provides a summary of the logical relationships between metrics across 
 
 The CATS metrics framework defines how metrics are encoded and transmitted over the network. The representation should be flexible enough to accommodate various types of metrics along with their respective units and precision levels, yet simple enough to enable easy implementation and deployment across heterogeneous edge environments.
 
-## CATS Metric Fields
-
-This section defines the detailed structure used to represent CATS metrics. The design has the following principles:
+The design of CATS metrics framework has the following principles:
 
 * Semantic granularity and extensibility: It adopts a layered metric abstraction.
 
@@ -218,17 +233,19 @@ This section defines the detailed structure used to represent CATS metrics. The 
 
 * Interoperability and flexibility: It allows implementation-specific aggregation and normalization functions, and adds default policies to ensure consistent cross-vendor interpretation.
 
+## CATS Metric Fields
+
 Each CATS metric is expressed as a structured set of fields, with each field describing a specific property of the metric. The following definition introduces the fields used in the CATS metric representations.
 
 - **Metric_Type**: This field specifies the category or kind of CATS metric being reported, such as computational resources, storage capacity, or network bandwidth. It acts as a label that enables network devices to identify the purpose of the metric.
 
-- **Level**: This field specifies the level at which the metric is measured. It is used to categorize the metric based on its granularity and scope. There are only three valid metric levels defined in  {{three-level-metrics}}.
+- **Level**: This field specifies the level at which the metric is measured. It is used to categorize the metric based on its granularity and scope. There are only three valid metric levels defined in  {{three-level-metrics}}. This field can take two values: 1 for Level 1 and 2 for Level 2.
 
 - **Format**: This field indicates the data encoding format of the metric, such as uint, ieee_754_float.
 
 - **Length**: This field indicates the size of the value field measured in octets (bytes). It specifies how many bytes are used to store the value of the metric. The length field is important for memory allocation and data handling, ensuring that the value is stored and retrieved correctly.
 
-- **Unit**: This field defines the measurement units for the metric, such as Hertz (HZ) for frequency, Bytes (B) for data size, or Bit per seconds (bps) for data transfer rate. It is usually associated with the metric to provide context for the value.
+- **Unit**: This field defines the measurement units for the metric, such as hertz (Hz) for frequency, bytes (B) for data size, or bits per seconds (bps) for data transfer rate. It is usually associated with the metric to provide context for the value.
 
 - **Source**: This field describes the origin of the information used to obtain the metric. This field is optional. It may include one or more of the following non-mutually exclusive values:
 
@@ -246,9 +263,9 @@ Each CATS metric is expressed as a structured set of fields, with each field des
 
 - **Statistics**: This field provides additional details about the metrics, particularly if there is any pre-computation performed on the metrics before they are collected. This field is optional. It is useful for services that require specific statistics for service instance selection. The 'Statistics' field must be used together with the 'Measurement_Window' parameter to indicate the sampling time interval. There are four kinds of statistics:
 
-    - 'max'. The maximum value of the data collected over intervals.
-    - 'min'. The minimum value of the data collected over intervals.
-    - 'mean'. The average value of the data collected over intervals.
+    - 'max'. The maximum value of the data collected over the intervals.
+    - 'min'. The minimum value of the data collected over the intervals.
+    - 'mean'. The average value of the data collected over the intervals.
     - 'cur'. The current value of the data collected.
 
 - **Value**: This field represents the actual numerical value of the metric being measured. It provides the specific data point for the metric in question.
@@ -261,19 +278,19 @@ In the context of CATS metric processing, aggregation and normalization are two 
 
 ### Aggregation {#aggregation-function}
 
-Aggregation functions combine multiple values into a single representative value. Aggregation functions can be applied at all metric levels. This document supports the spatial aggregation and temporal aggregation that are defined in {{RFC5835}}, and further defines cross-category aggregation which can aggregate metrics from different types into a single value. There are some aggregation examples in CATS:
+Aggregation functions combine multiple values into a single representative value. Aggregation functions can be applied at all metric levels. This document supports the spatial aggregation and temporal aggregation that are defined in {{RFC5835}}, and further defines cross-category aggregation which can aggregate metrics from different types into a single value. The following are aggregation examples supported by CATS:
 
-- Spatial or temporal aggregation of multiple Level 0 metrics of the same type to generate a new Level 0 metric;
+- Spatial or temporal aggregation of multiple metrics of the same type to produce a derived metric. In this case, because the input metrics are homogeneous, the resulting metric may retain the same units as the inputs. For example, CPU utilization measurements (expressed in percentage) collected from multiple service instances (spatial aggregation) or averaged over consecutive time intervals (temporal aggregation) can be aggregated to produce a representative CPU utilization metric. Such aggregation concepts are consistent with those described in {{RFC5835}}.
 
-- Cross-category aggregation of multiple Level 0 metrics of different types to generate a Level 1 metric.
+- Aggregation of multiple metrics of different types to produce a higher-level metric that captures combined behavior across resource dimensions. In this case, because the input metrics use different units, the resulting metric cannot retain physical units and must be expressed as a unitless value. For example, CPU capacity (expressed in Hz) and available memory (expressed in bytes) can be combined through aggregation to generate a single computing-time metric that characterizes overall processing capability.
 
 Some common aggregation functions include:
 
-- Mean: Computes the arithmetic mean of a set of values.
+- Mean: Computes the arithmetic mean of a set of input values.
 
-- Minimum/maximum: Selects the lowest or highest value from a set.
+- Minimum / Maximum: Selects the lowest or highest value from a set of input values.
 
-- Weighted average: Applies weights to values based on relevance or priority.
+- Weighted average: Computes an average by applying weights to individual values according to their relative importance or priority.
 
 Aggregation functions are not standardized in this document. They are implementation-specific and controlled by operator policies.
 
@@ -294,13 +311,13 @@ Aggregation functions are not standardized in this document. They are implementa
 
 ### Normalization {#normalization-function}
 
-Normalization functions convert a metric value (with or without units) into a unitless normalized score. Normalized metrics facilitate composite scoring and ranking, and can be used to produce Level 1 and Level 2 metrics. There are some normalization examples in CATS:
+Normalization functions convert a metric value (with or without units) into a unitless normalized score. Normalized metrics facilitate composite scoring and ranking, and can be used to produce Level 1 and Level 2 metrics. The following are normalization examples supported by CATS:
 
 - Normalizing a single Level 0 metric to generate a Level 1 or Level 2 normalized metric;
 
 - Normalizing the output of aggregating multiple Level 0 metrics, to generate a Level 1 normalized metric.
 
-Normalization functions often map values into a bounded range, such as integers from 0 to 10, using techniques like:
+Normalization functions are commonly used to transform metric values into a bounded range (e.g., an integer scale from 0 to 10) using techniques such as sigmoid function and min-max scaling {{Min-max-sigmoid}}:
 
 - Sigmoid function: Smoothly maps input values to a bounded range.
 
@@ -319,7 +336,7 @@ These normalization functions are also not standardized in this document. They a
 
 ## On the Meaning of Scores in Heterogeneous Metrics Systems {#score-meaning}
 
-In a system like CATS, where metrics originate from heterogeneous resources---such as compute, communication, and storage---the interpretation of scores requires careful consideration. While normalization functions can convert raw metrics into unitless scores to enable comparison, these scores may not be directly comparable across different implementations. For example, a score of 4 on a scale from 0 to 10 may represent a high-quality resource in one implementation, but only an average one in another.
+In a system like CATS, where metrics originate from heterogeneous resources---such as compute, communication, and storage---the interpretation of scores requires careful consideration. While normalization functions can convert raw metrics into unitless scores to enable comparison, these scores may not be directly comparable across different implementations. For example, a score of 7 on a scale from 0 to 10 may represent a high-quality resource in one implementation, but only an average one in another.
 
 To achieve consistent cross-vendor behavior, the default normalization policies defined in this document should be followed by all implementations:
 
@@ -329,7 +346,7 @@ A common 0-10 numeric range should be used for all normalized scores. Unless oth
 * Normalization function baseline:
 Unless documented otherwise, implementations should use min-max scaling to map the aggregated raw value into the 0-10 range, based on implementation-specific minimum and maximum expected values. Other functions (e.g., sigmoid) are permitted but their parameters must be documented.
 
-* Measurement window: There is no fixed default measurement window. For illustration, a window of 10 seconds is suggested as an example. Implementations can use their chosen window length, but they must indicate the window length as a parameter (e.g., via the Measurement_Window field defined in the registry entries).
+* Measurement window: There is no fixed default measurement window. For illustration, a window of 10 seconds is suggested as an example. Implementations can use their chosen window length, but they must indicate the window length as a parameter (i.e., via the Measurement_Window field defined in the registry entries).
 
 ## Level Metric Representations {#level-metric-representations}
 
@@ -341,61 +358,78 @@ Level 0 metrics are raw metrics that are not standardized in this document. See 
 
 ### Level 1 Metrics
 
-Level 1 metrics are derived from Level 0 metrics. Although they don't have units, they can still be classified into types such as compute, communication, service and composed metrics. This classification is useful because it makes Level 1 metrics semantically meaningful.
+Level 1 metrics are derived from Level 0 metrics through the application of aggregation functions and, when appropriate, normalization functions. Depending on how they are formed, Level 1 metrics MAY retain physical units inherited from their inputs or MAY be expressed as unitless values.
+
+Level 1 metrics are organized into semantic categories such as computing, communication, service, and composed metrics. This categorization provides context and meaning to the resulting metrics and enables consistent interpretation across implementations.
 
 The sources of Level 1 metrics is aggregation and normalization.
 
-#### Normalized Compute Metrics
+#### Combined Computing Metrics
 
-The metric type of normalized compute metrics is "compute_norm", and its format is unsigned integer. It has no unit. It will occupy an octet. Example:
+The metric type of combined computing metrics is "computing_comb", and its format is unsigned integer. It has no unit. It will occupy an octet. Example:
 
 ~~~
 Fields:
-      Metric type: compute_norm
+      Metric_type: computing_comb
       Level: Level 1
       Format: unsigned integer
       Length: one octet
       Source: normalization
       Value: 5
 ~~~
-{: #fig-normalized-compute-metric title="Example of a normalized Level 1 compute metric"}
+{: #fig-combined-compute-metric title="Example of a combined Level 1 computing metric"}
 
 
-#### Normalized Communication Metrics
+#### Combined Communication Metrics
 
-The metric type of normalized communication metrics is "communication_norm", and its format is unsigned integer. It has no unit. It will occupy an octet. Example:
+The metric type of combined communication metrics is "communication_comb", and its format is unsigned integer. It has no unit. It will occupy an octet. Example:
 
 ~~~
 Fields:
-      Metric type: communication_norm
+      Metric_type: communication_comb
       Level: Level 1
       Format: unsigned integer
       Length: one octet
       Source: normalization
       Value: 1
 ~~~
-{: #fig-normalized-communication-metric title="Example of a normalized Level 1 communication metric"}
+{: #fig-combined-communication-metric title="Example of a combined Level 1 communication metric"}
 
-#### Normalized Composed Metrics
+#### Combined Service Metrics
 
-The metric type of normalized composed metrics is "delay_norm", and its format is unsigned integer.  It has no unit.  It will occupy an octet. Example:
+The metric type of combined service metrics is "service_comb", and its format is unsigned integer. It has no unit. It will occupy an octet. Example:
 
 ~~~
 Fields:
-      Metric type: composed_norm
+      Metric_type: service_comb
+      Level: Level 1
+      Format: unsigned integer
+      Length: one octet
+      Source: normalization
+      Value: 1
+~~~
+{: #fig-combined-service-metric title="Example of a combined Level 1 service metric"}
+
+#### Combined Composed Metrics
+
+The metric type of combined composed metrics is "composed_comb", and its format is unsigned integer.  It has no unit.  It will occupy an octet. Example:
+
+~~~
+Fields:
+      Metric type: composed_comb
       Level: Level 1
       Format: unsigned integer
       Length: an octet
       Source: normalization
       Value: 8
 ~~~
-{: #fig-normalized-metric title="Example of a normalized Level 1 composed metric"}
+{: #fig-combined-composed-metric title="Example of a combined Level 1 composed metric"}
 
 ### Level 2 Metrics
 
-A Level 2 metric is a single-value, normalized metric that does not carry any inherent physical unit or meaning. While each provider may employ its own internal methods to compute this value, all providers must adhere to the representation guidelines defined in this section to ensure consistency and interoperability of the normalized output.
+A Level 2 metric is a single-value, normalized metric that does not carry any inherent physical unit. While each provider may employ its own internal methods to compute this value, all providers must adhere to the representation guidelines defined in this section to ensure consistency and interoperability of the normalized output.
 
-Metric type is "norm_fi". The format of the value is unsigned integer. It has no unit. It will occupy an octet. Example:
+The Metric Type is "norm_fi". The metric value is encoded as an unsigned integer, carries no unit, and is represented using a single octet. An example is shown below.
 
 ~~~
 Fields:
@@ -408,12 +442,10 @@ Fields:
 ~~~
 {: #fig-level-2-metric title="Example of a normalized Level 2 metric"}
 
-The single normalized value also facilitates aggregation across multiple service instances. When each instance provides its own normalized value, no additional statistical processing is required at the instance level. Instead, aggregation can be performed externally using standardized methods, enabling scalable and consistent interpretation of metrics across distributed environments.
 
 # Comparison among Metric Levels
 
-Metrics are progressively consolidated from Level 0 to Level 1 to Level 2, with each level offering a different degree of abstraction to address the diverse requirements of various services. Table 1 provides a comparative overview of these metric levels.
-
+Metrics are progressively consolidated from Level 0 to Level 1 and then to Level 2, with each level offering an increasing degree of abstraction to address the diverse requirements of different services. Table 1 provides a comparative overview of the defined metric levels.
 
 |  Level   | Encoding Complexity| Extensibility| Stability |Accuracy|
 |:--------:+:-------------------+--------------+-----------|--------|
@@ -422,8 +454,7 @@ Metrics are progressively consolidated from Level 0 to Level 1 to Level 2, with 
 | Level 2  | Low                | High         | High      |Low     |
 {: #comparison title="Comparison among Metrics Levels"}
 
-
-Since Level 0 metrics are raw and service-specific, different services may define their own sets---potentially resulting in hundreds or even thousands of unique metrics. This diversity introduces significant complexity in protocol encoding and standardization. Consequently, Level 0 metrics are confined to bespoke implementations tailored to specific service needs, rather than being standardized for broad protocol use. In contrast, Level 1 metrics organize raw data into standardized categories, each normalized into a single value. This structure makes them more suitable for protocol encoding and standardization. Level 2 metrics take simplification a step further by consolidating all relevant information into a single normalized value, making them the easiest to encode, transmit, and standardize.
+Since Level 0 metrics are raw and service-specific, individual services may define their own metric sets, potentially resulting in hundreds or even thousands of distinct metrics across deployments. This diversity introduces significant complexity in protocol encoding and standardization. Consequently, Level 0 metrics are confined to bespoke implementations tailored to specific service needs, rather than being standardized for broad protocol use. In contrast, Level 1 metrics organize raw data into standardized categories, each consolidated into a single value. This structure makes them more suitable for protocol encoding and standardization. The Level 2 metric takes simplification a step further by consolidating all relevant information into a single normalized value, making them the easiest to encode, transmit, and standardize.
 
 Therefore, from the perspective of encoding complexity, Level 1 and Level 2 metrics are recommended.
 
@@ -503,11 +534,11 @@ This category includes columns for references to relevant sections of the RFC(s)
 
 Raw Metrics collection: Collect Level 0 service and compute raw metrics using platform-specific management protocols or tools (e.g., Prometheus {{Prometheus}} in Kubernetes). Collect Level 0 network performance raw metrics using existing standardized protocols (e.g., NETCONF {{RFC6241}}, IPFIX {{RFC7011}}).
 
-Aggregation logic: Refer to {{I-D.ietf-cats-metric-definition}} Section 4.2.1 (e.g., Weighted Average Aggregation).
+Aggregation logic: Refer to {{aggregation-function}}.
 
-Normalization logic: Refer to {{I-D.ietf-cats-metric-definition}} Section 4.2.2 (e.g., Sigmoid Normalization).
+Normalization logic: Refer to {{normalization-function}}.
 
-The reference method aggregates and normalizes Level 0 metrics to generate Level 1 metrics in different categories, and further calculates a Level 2 singleton score for full normalization.
+The reference method aggregates and normalizes Level 0 metrics to generate Level 1 metrics in different categories, and further calculates a Level 2 singleton score for ultimate normalization.
 
 #### Packet Stream Generation
 
@@ -580,9 +611,9 @@ To-be-assgined
 
 None
 
-## CATS Level 1 Metric Registry Entry: Compute {#cats-level-1-compute-metric}
+## CATS Level 1 Metric Registry Entry: Computing {#cats-level-1-computing-metric}
 
-This section gives an initial Registry Entry for the CATS Level 1 metric in the *compute* category.
+This section gives an initial Registry Entry for the CATS Level 1 metric in the *computing* category.
 
 ### Summary
 
@@ -594,17 +625,17 @@ IANA has allocated the Identifier XXX for the Named Metric Entry in this section
 
 #### Name
 
-Norm_Passive_CATS-Level 1_Compute_RFCXXXXsecY_Unitless_Singleton
+Comb_Passive_CATS-Level 1_Computing_RFCXXXXsecY_Unitless_Singleton
 
 Naming Rule Explanation
 
-* Norm: Metric type (Normalized Score)
+* Comb: Metric type (Combined Score)
 * Passive: Measurement method
 * CATS-Level 1: Metric level (CATS Metric Framework Level 1)
-* Compute: Metric category (Compute)
+* Computing: Metric category (Computing)
 * RFCXXXXsecY: Specification reference (To-be-assigned RFC number and section number)
 * Unitless: Metric has no units
-* Singleton: Metric is a single value for the compute category
+* Singleton: Metric is a single value for the computing category
 
 #### URI
 
@@ -612,9 +643,9 @@ To-be-assigned.
 
 #### Description
 
-This metric represents a single normalized score for the *compute* category within CATS (Level 1). It is derived from one or more compute-related Level 0 metrics (e.g., CPU/GPU/NPU utilization, CPU frequency, memory utilization, or other compute resource indicators) by applying an implementation-specific aggregation function over the selected Level 0 compute metrics and then applying a normalization function to produce a unitless score.
+This metric represents a single normalized score for the *computing* category within CATS (Level 1). It is derived from one or more computing-related Level 0 metrics (e.g., CPU/GPU/NPU utilization, CPU frequency, memory utilization, or other computing resource indicators) by applying an implementation-specific aggregation function over the selected Level 0 computing metrics and then applying a normalization function to produce a unitless score.
 
-The resulting score provides a concise indication of the relative compute capability (or headroom) of a service contact instance for the purpose of instance selection and traffic steering. Higher values indicate better compute capability according to the provider's normalization strategy.
+The resulting score provides a concise indication of the relative computing capability (or headroom) of a service contact instance for the purpose of instance selection and traffic steering. Higher values indicate better computing capability according to the provider's normalization strategy.
 
 #### Change Controller
 
@@ -634,11 +665,11 @@ Core referenced sections: Section 3.3 (Level 1 Level Metric Definition), Section
 
 #### Fixed Parameters
 
-- Normalization score range: 0-10 (0 indicates the poorest compute capability, 10 indicates the optimal compute capability)
+- Normalization score range: 0-10 (0 indicates the poorest computing capability, 10 indicates the optimal computing capability)
 
 - Data precision: non-negative integer
 
-- Metric type: "compute_norm"
+- Metric type: "computing_comb"
 
 - Level: Level 1
 
@@ -650,13 +681,13 @@ This category includes columns for references to relevant sections of the RFC(s)
 
 #### Reference Methods
 
-Raw Metrics collection: Collect compute-related Level 0 raw metrics (e.g., CPU/GPU/NPU, memory, and relevant platform counters) using platform-specific management protocols or tools (e.g., Prometheus {{Prometheus}} in Kubernetes or equivalent telemetry systems).
+Raw Metrics collection: Collect computing-related Level 0 raw metrics (e.g., CPU/GPU/NPU, memory, and relevant platform counters) using platform-specific management protocols or tools (e.g., Prometheus {{Prometheus}} in Kubernetes or equivalent telemetry systems).
 
-Aggregation logic (within compute category): Refer to {{I-D.ietf-cats-metric-definition}} Section 4.2.1 (e.g., Weighted Average Aggregation) to combine selected Level 0 compute metrics into a single intermediate value prior to normalization. The selection of Level 0 compute metrics and any weights used are implementation-specific.
+Aggregation logic (within computing category): Refer to {{aggregation-function}} to combine selected Level 0 computing metrics into a single intermediate value prior to normalization. The selection of Level 0 computing metrics and any weights used are implementation-specific.
 
-Normalization logic: Refer to {{I-D.ietf-cats-metric-definition}} Section 4.2.2 (e.g., Sigmoid Normalization or Min-max scaling) to map the aggregated (or directly selected) compute value into the fixed score range.
+Normalization logic: Refer to {{normalization-function}} to map the aggregated (or directly selected) computing value into the fixed score range.
 
-The reference method aggregates and normalizes Level 0 compute metrics to generate a single Level 1 compute score ("compute_norm"). No cross-category aggregation is performed for this metric (i.e., it does not incorporate communication or service metrics).
+The reference method aggregates and normalizes Level 0 computing metrics to generate a single Level 1 computing score ("computing_comb").
 
 #### Packet Stream Generation
 
@@ -668,7 +699,7 @@ N/A
 
 #### Sampling Distribution
 
-Sampling method: Continuous sampling (e.g., collect underlying Level 0 compute metrics every 10 seconds)
+Sampling method: Continuous sampling (e.g., collect underlying Level 0 computing metrics every 10 seconds)
 
 #### Runtime Parameters and Data Format
 
@@ -680,7 +711,7 @@ Measurement_Window: Metric measurement time window (Units: seconds, milliseconds
 
 #### Roles
 
-C-SMA: Collects Level 0 compute raw metrics and calculates the Level 1 compute normalized score ("compute_norm") according to service/provider-specific aggregation and normalization strategies.
+C-SMA: Collects Level 0 compute raw metrics and calculates the Level 1 compute normalized score ("computing_comb") according to service/provider-specific aggregation and normalization strategies.
 
 C-NMA: Not required for this metric.
 
@@ -704,7 +735,7 @@ Unitless
 
 #### Calibration
 
-Calibration method: Conduct benchmark calibration based on representative compute workloads (fixed test workload profiles) to align the mapping from Level 0 compute metrics to the Level 1 score, such that score deviation across measurement agents within the same administrative domain is minimized (e.g., less than 0.1 over repeated test rounds).
+Calibration method: Conduct benchmark calibration based on representative compute workloads (fixed test workload profiles) to align the mapping from Level 0 computing metrics to the Level 1 score, such that score deviation across measurement agents within the same administrative domain is minimized (e.g., less than 0.1 over repeated test rounds).
 
 ### Administrative Items
 
@@ -742,11 +773,11 @@ IANA has allocated the Identifier XXX for the Named Metric Entry in this section
 
 #### Name
 
-Norm_Passive_CATS-Level 1_Communication_RFCXXXXsecY_Unitless_Singleton
+Comb_Passive_CATS-Level 1_Communication_RFCXXXXsecY_Unitless_Singleton
 
 Naming Rule Explanation
 
-* Norm: Metric type (Normalized Score)
+* Comb: Metric type (Combined Score)
 * Passive: Measurement method
 * CATS-Level 1: Metric level (CATS Metric Framework Level 1)
 * Communication: Metric category (Communication)
@@ -786,7 +817,7 @@ Core referenced sections: Section 3.3 (Level 1 Level Metric Definition), Section
 
 - Data precision: non-negative integer
 
-- Metric type: "communication_norm"
+- Metric type: "communication_comb"
 
 - Level: Level 1
 
@@ -804,7 +835,7 @@ Aggregation logic (within communication category): Refer to {{I-D.ietf-cats-metr
 
 Normalization logic: Refer to {{I-D.ietf-cats-metric-definition}} Section 4.2.2 (e.g., Sigmoid Normalization or Min-max scaling) to map the aggregated (or directly selected) communication value into the fixed score range.
 
-The reference method aggregates and normalizes Level 0 communication metrics to generate a single Level 1 communication score ("communication_norm"). No cross-category aggregation is performed for this metric (i.e., it does not incorporate compute or service metrics).
+The reference method aggregates and normalizes Level 0 communication metrics to generate a single Level 1 communication score ("communication_comb"). No cross-category aggregation is performed for this metric (i.e., it does not incorporate compute or service metrics).
 
 #### Packet Stream Generation
 
@@ -828,7 +859,7 @@ Measurement_Window: Metric measurement time window (Units: seconds, milliseconds
 
 #### Roles
 
-C-NMA: Collects Level 0 communication raw metrics and calculates the Level 1 communication normalized score ("communication_norm") according to provider-specific aggregation and normalization strategies.
+C-NMA: Collects Level 0 communication raw metrics and calculates the Level 1 communication normalized score ("communication_comb") according to provider-specific aggregation and normalization strategies.
 
 C-SMA: Not required for this metric.
 
@@ -890,11 +921,11 @@ IANA has allocated the Identifier XXX for the Named Metric Entry in this section
 
 #### Name
 
-Norm_Passive_CATS-Level 1_Service_RFCXXXXsecY_Unitless_Singleton
+Comb_Passive_CATS-Level 1_Service_RFCXXXXsecY_Unitless_Singleton
 
 Naming Rule Explanation
 
-* Norm: Metric type (Normalized Score)
+* Comb: Metric type (Combined Score)
 * Passive: Measurement method
 * CATS-Level 1: Metric level (CATS Metric Framework Level 1)
 * Service: Metric category (Service)
@@ -934,7 +965,7 @@ Core referenced sections: Section 3.3 (Level 1 Level Metric Definition), Section
 
 - Data precision: non-negative integer
 
-- Metric type: "service_norm"
+- Metric type: "service_comb"
 
 - Level: Level 1
 
@@ -952,7 +983,7 @@ Aggregation logic (within service category): Refer to {{I-D.ietf-cats-metric-def
 
 Normalization logic: Refer to {{I-D.ietf-cats-metric-definition}} Section 4.2.2 (e.g., Sigmoid Normalization or Min-max scaling) to map the aggregated (or directly selected) service value into the fixed score range.
 
-The reference method aggregates and normalizes Level 0 service metrics to generate a single Level 1 service score ("service_norm"). No cross-category aggregation is performed for this metric (i.e., it does not incorporate compute or communication metrics).
+The reference method aggregates and normalizes Level 0 service metrics to generate a single Level 1 service score ("service_comb"). No cross-category aggregation is performed for this metric (i.e., it does not incorporate compute or communication metrics).
 
 #### Packet Stream Generation
 
@@ -976,7 +1007,7 @@ Measurement_Window: Metric measurement time window (Units: seconds, milliseconds
 
 #### Roles
 
-Service contact instace: Collects Level 0 service raw metrics and calculates the Level 1 service normalized score ("service_norm") according to service/provider-specific aggregation and normalization strategies.
+Service contact instace: Collects Level 0 service raw metrics and calculates the Level 1 service normalized score ("service_comb") according to service/provider-specific aggregation and normalization strategies.
 
 C-NMA: Not required for this metric.
 
@@ -1038,11 +1069,11 @@ IANA has allocated the Identifier XXX for the Named Metric Entry in this section
 
 #### Name
 
-Norm_Passive_CATS-Level 1_Composed_RFCXXXXsecY_Unitless_Singleton
+Comb_Passive_CATS-Level 1_Composed_RFCXXXXsecY_Unitless_Singleton
 
 Naming Rule Explanation
 
-* Norm: Metric type (Normalized Score)
+* Comb: Metric type (Combined Score)
 * Passive: Measurement method
 * CATS-Level 1: Metric level (CATS Metric Framework Level 1)
 * Composed: Metric category (Composed)
@@ -1084,7 +1115,7 @@ Core referenced sections: Section 3.3 (Level 1 Level Metric Definition), Section
 
 - Data precision: non-negative integer
 
-- Metric type: "composed_norm"
+- Metric type: "composed_comb"
 
 - Level: Level 1
 
@@ -1098,11 +1129,11 @@ This category includes columns for references to relevant sections of the RFC(s)
 
 Raw Metrics collection: Collect contributing Level 0 raw metrics from the relevant sources across categories. For example, compute- and service-related Level 0 metrics may be collected by a C-SMA using platform-specific telemetry systems (e.g., Prometheus {{Prometheus}}), while communication-related Level 0 metrics may be collected by a C-NMA using network telemetry and protocols (e.g., NETCONF {{RFC6241}}, IPFIX {{RFC7011}}), and/or using network performance metric definitions and registries such as {{RFC8911}}, {{RFC8912}}, and {{RFC9439}} where applicable.
 
-Aggregation logic (within composed category): Refer to {{I-D.ietf-cats-metric-definition}} Section 4.2.1 (e.g., Weighted Average Aggregation) to combine selected contributing metrics into a single intermediate value prior to normalization. The aggregation function MAY combine Level 0 metrics directly, and/or MAY take as input one or more Level 1 category metrics (e.g., "compute_norm" and "communication_norm"). The selection of contributing metrics, any weights used, and the composition model (e.g., sum of delays, bottleneck/maximum, or weighted utility) are implementation-specific.
+Aggregation logic (within composed category): Refer to {{I-D.ietf-cats-metric-definition}} Section 4.2.1 (e.g., Weighted Average Aggregation) to combine selected contributing metrics into a single intermediate value prior to normalization. The aggregation function MAY combine Level 0 metrics directly, and/or MAY take as input one or more Level 1 category metrics (e.g., "computing_comb" and "communication_comb"). The selection of contributing metrics, any weights used, and the composition model (e.g., sum of delays, bottleneck/maximum, or weighted utility) are implementation-specific.
 
 Normalization logic: Refer to {{I-D.ietf-cats-metric-definition}} Section 4.2.2 (e.g., Sigmoid Normalization or Min-max scaling) to map the aggregated composed value into the fixed score range.
 
-The reference method aggregates and normalizes the selected contributing metrics to generate a single Level 1 composed score ("composed_norm").
+The reference method aggregates and normalizes the selected contributing metrics to generate a single Level 1 composed score ("composed_comb").
 
 #### Packet Stream Generation
 
@@ -1126,9 +1157,9 @@ Measurement_Window: Metric measurement time window (Units: seconds, milliseconds
 
 #### Roles
 
-C-SMA: Collects Level 0 service and compute raw metrics that may contribute to the composed score, and MAY calculate the Level 1 composed score ("composed_norm") when it has access to the required inputs.
+C-SMA: Collects Level 0 service and compute raw metrics that may contribute to the composed score, and MAY calculate the Level 1 composed score ("composed_comb") when it has access to the required inputs.
 
-C-NMA: Collects Level 0 communication raw metrics that may contribute to the composed score, and MAY calculate the Level 1 composed score ("composed_norm") when it has access to the required inputs.
+C-NMA: Collects Level 0 communication raw metrics that may contribute to the composed score, and MAY calculate the Level 1 composed score ("composed_comb") when it has access to the required inputs.
 
 CATS Controller (or other CATS component): MAY compute the Level 1 composed score when the contributing metrics originate from multiple agents and are combined at a common computation point.
 
@@ -1189,7 +1220,7 @@ The initial entries for this registry are defined in {{cats-metrics-registry}} a
 
 {{cats-level-2-metric-registry}}: CATS L2 Metric Registry Entry
 
-{{cats-level-1-compute-metric}}: CATS L1 Metric Registry Entry: Compute
+{{cats-level-1-compute-metric}}: CATS L1 Metric Registry Entry: Computing
 
 {{cats-level-1-communication-metric}}: CATS L1 Metric Registry Entry: Communication
 
@@ -1211,7 +1242,7 @@ Several definitions have been developed within the compute and communication ind
 
 ## Compute Raw Metrics
 
-This section uses CPU frequency as an example to illustrate the representation of raw compute metrics. The metric type is labeled as compute_CPU_frequency, with the unit specified in GHz. The format supports floating-point values. The corresponding metric fields are defined as follows:
+This section uses CPU frequency as an example to illustrate the representation of raw computing metrics. The metric type is labeled as compute_CPU_frequency, with the unit specified in GHz. The format supports floating-point values. The corresponding metric fields are defined as follows:
 
 ~~~
 Fields:
