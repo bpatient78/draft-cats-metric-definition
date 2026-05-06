@@ -1220,7 +1220,7 @@ The initial entries for this registry are defined in {{cats-metrics-registry}} a
 
 {{cats-level-2-metric-registry}}: CATS L2 Metric Registry Entry
 
-{{cats-level-1-compute-metric}}: CATS L1 Metric Registry Entry: Computing
+{{cats-level-1-computing-metric}}: CATS L1 Metric Registry Entry: Computing
 
 {{cats-level-1-communication-metric}}: CATS L1 Metric Registry Entry: Communication
 
